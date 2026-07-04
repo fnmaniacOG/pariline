@@ -1,0 +1,13 @@
+[features]
+resolution = true
+skip-lint = false
+
+[programs.devnet]
+pariline = "3LQjPerfx6ezVbe7dV4WEwUyySrA5S55arje3ParJGMi"
+
+[provider]
+cluster = "Devnet"
+wallet = "../../sharpline/wallet.json"
+
+[scripts]
+test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"

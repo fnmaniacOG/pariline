@@ -1,0 +1,17 @@
+# secrets and keys - never commit
+.env
+*wallet*.json
+*keypair*.json
+program/target/deploy/*.json
+
+# build artifacts
+program/target/
+program/.anchor/
+test-ledger/
+node_modules/
+
+# regenerable feasibility output
+feasibility/validation.json
+feasibility/scores-snapshot.json
+
+.DS_Store
