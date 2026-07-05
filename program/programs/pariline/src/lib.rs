@@ -34,9 +34,10 @@ pub const OUTCOME_HOME: u8 = 0;
 pub const OUTCOME_DRAW: u8 = 1;
 pub const OUTCOME_AWAY: u8 = 2;
 
-/// TxLINE stat keys: total goals for participant 1 / participant 2.
-pub const STAT_GOALS_P1: u32 = 1002;
-pub const STAT_GOALS_P2: u32 = 1003;
+/// TxLINE stat keys, encoded (period * 1000) + base_key. Base 1 and 2 with no
+/// period offset = full-game total goals for participant 1 / participant 2.
+pub const STAT_GOALS_P1: u32 = 1;
+pub const STAT_GOALS_P2: u32 = 2;
 
 #[program]
 pub mod pariline {
@@ -112,8 +113,12 @@ pub mod pariline {
         require!(proof.summary.fixture_id == m.fixture_id, ErrorCode::WrongFixture);
         if m.state == MarketState::Proposed {
             require!(now <= m.challenge_deadline, ErrorCode::ChallengeOver);
+            // >= not >: with the goal stat keys pinned above, two proofs at the
+            // same batch timestamp prove the same leaves, so an equal-timestamp
+            // replacement is idempotent, and this lets a correct proof replace
+            // one from the same final batch.
             require!(
-                proof.summary.update_stats.max_timestamp > m.proposed_score_ts,
+                proof.summary.update_stats.max_timestamp >= m.proposed_score_ts,
                 ErrorCode::StaleProof
             );
         }

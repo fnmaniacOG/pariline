@@ -4,7 +4,7 @@
 
 The core problem for any prediction market is settlement: who decides the outcome, and why should bettors trust them. PariLine's answer is that nobody decides. TxODDS publishes Merkle roots of all score updates to its txoracle program on Solana (devnet `6pW64gN1s2uqjHkn1unFeEjAwJkPGHoppGvS715wyP2J`), batched into daily PDAs seeded `["daily_scores_roots", epoch_day_le_u16]`. TxLINE's API serves proof paths for any individual stat via `/api/scores/stat-validation`.
 
-Our `propose_settlement` instruction takes a claimed outcome plus the proof payload and CPIs into txoracle's `validate_stat` (discriminator `[107,197,232,90,191,136,105,185]`, single readonly account, returns bool via return data). The call proves both goal stats (stat keys 1002 and 1003, participant 1 and 2 total goals) against the on-chain roots and evaluates the predicate implied by the claim:
+Our `propose_settlement` instruction takes a claimed outcome plus the proof payload and CPIs into txoracle's `validate_stat` (discriminator `[107,197,232,90,191,136,105,185]`, single readonly account, returns bool via return data). The call proves both goal stats against the on-chain roots and evaluates the predicate implied by the claim. Stat keys follow TxLINE's `(period * 1000) + base_key` encoding; base keys 1 and 2 with no period offset are the full-game total goals for participants 1 and 2. (Note for other integrators: the docs example's keys 1002 and 1003 are first-half participant 2 goals and first-half participant 1 yellow cards, not the match score.)
 
 - home: goals1 - goals2 > 0
 - draw: goals1 - goals2 == 0
@@ -31,7 +31,7 @@ Claims pay `stake * total / winning_pool`, computed in u128 to avoid overflow.
 ## Security checks in propose_settlement
 
 - proof fixture id must equal the market's fixture id
-- stat keys must be exactly 1002 and 1003, from the same proven event root
+- stat keys must be exactly 1 and 2 (full-game goal totals), from the same proven event root
 - daily roots account must be owned by txoracle; CPI target pinned by address
 - replacement proposals must carry a strictly later score timestamp and land inside the challenge window
 - return data is checked for program id and value
@@ -50,3 +50,5 @@ The TxLINE auth flow (guest JWT plus on-chain subscribe token), the fixture and 
 - 1X2 only; the same proof machinery extends to totals and handicaps via other stat keys and thresholds (txoracle's predicate already supports arbitrary thresholds and two-stat expressions).
 - Stakes are native SOL; an SPL (e.g. USDC) variant is a token-account swap away.
 - If TxODDS stopped publishing roots entirely, markets would simply never settle; funds would be stuck rather than stolen. A refund-after-deadline instruction is the natural extension.
+- Full-game goal totals include extra time in knockout matches. A regulation-only 1X2 variant would prove the H1 and H2 period keys (1001/1002 and 2001/2002) and sum them on-chain.
+- If a market has no winning positions (nobody backed the proven outcome), the pot currently stays in the vault; a refund path for that case is another natural extension.

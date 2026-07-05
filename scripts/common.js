@@ -16,8 +16,9 @@ const RPC_URL = process.env.RPC_URL || "https://api.devnet.solana.com";
 const TXORACLE_ID = new PublicKey("6pW64gN1s2uqjHkn1unFeEjAwJkPGHoppGvS715wyP2J");
 const WORLD_CUP_COMPETITION_ID = 72;
 const FINAL_STATUS_IDS = [5, 10, 13];
-const STAT_GOALS_P1 = 1002;
-const STAT_GOALS_P2 = 1003;
+// (period * 1000) + base_key; base 1/2 with no offset = full-game total goals
+const STAT_GOALS_P1 = 1;
+const STAT_GOALS_P2 = 2;
 const OUTCOME_NAMES = ["HOME", "DRAW", "AWAY"];
 
 function loadEnv() {

@@ -36,21 +36,30 @@ async function tick(http, program, wallet) {
     const ended = findKeys(snap, /^StatusId$/).some(([, v]) => FINAL_STATUS_IDS.includes(v));
     if (!ended) { console.log(`${fixtureId}: not ended yet`); continue; }
 
-    const seqs = findKeys(snap, /^Seq$/i).map(([, v]) => v).filter(Number.isInteger);
-    const seq = Math.max(...seqs);
-    let v;
-    try {
-      ({ data: v } = await http.get("/api/scores/stat-validation", {
-        params: { fixtureId, seq, statKey: STAT_GOALS_P1, statKey2: STAT_GOALS_P2 },
-      }));
-    } catch (e) {
-      console.log(`${fixtureId}: stat-validation failed (${e.response?.status})`); continue;
+    // Seq is per-connection, so "max Seq" can point at a stale event. Take the
+    // seqs of the newest events by Ts and keep the payload whose proven batch
+    // carries the latest score timestamp.
+    const events = (Array.isArray(snap) ? snap : [snap])
+      .filter((r) => Number.isInteger(r.Seq) && r.Ts)
+      .sort((a, b) => b.Ts - a.Ts);
+    const candidateSeqs = [...new Set(events.slice(0, 6).map((r) => r.Seq))];
+    let v = null;
+    for (const seq of candidateSeqs) {
+      try {
+        const { data } = await http.get("/api/scores/stat-validation", {
+          params: { fixtureId, seq, statKey: STAT_GOALS_P1, statKey2: STAT_GOALS_P2 },
+        });
+        if (!v || data.summary.updateStats.maxTimestamp > v.summary.updateStats.maxTimestamp) v = data;
+      } catch (e) {
+        console.log(`${fixtureId}: stat-validation seq=${seq} failed (${e.response?.status})`);
+      }
     }
+    if (!v) { console.log(`${fixtureId}: no validation payload obtainable`); continue; }
 
     const { proof, dailyScoresRoots, goalsP1, goalsP2 } = buildSettlementProof(v);
     const claimed = outcomeFromGoals(goalsP1, goalsP2);
     if (state === "proposed" &&
-        !new BN(proof.summary.updateStats.maxTimestamp).gt(new BN(m.proposedScoreTs))) {
+        !new BN(proof.summary.updateStats.maxTimestamp).gte(new BN(m.proposedScoreTs))) {
       console.log(`${fixtureId}: proposal already at latest score ts`); continue;
     }
     try {
