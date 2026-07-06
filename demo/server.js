@@ -39,10 +39,16 @@ async function marketsJson() {
     prog.account.market.all(),
     httpApi.get("/api/fixtures/snapshot"),
   ]);
-  const fx = {};
+  // fixtures drop out of the snapshot once finished; cache names permanently
+  const cachePath = path.join(__dirname, "fixtures-cache.json");
+  let cache = {};
+  try { cache = JSON.parse(fs.readFileSync(cachePath, "utf8")); } catch {}
   const list = Array.isArray(fixturesRes.data)
     ? fixturesRes.data : fixturesRes.data.fixtures || fixturesRes.data.Fixtures || [];
-  for (const f of list) fx[f.FixtureId] = f;
+  for (const f of list) cache[f.FixtureId] = { home: f.Participant1, away: f.Participant2 };
+  fs.writeFileSync(cachePath, JSON.stringify(cache, null, 2));
+  const fx = {};
+  for (const [id, v] of Object.entries(cache)) fx[id] = { Participant1: v.home, Participant2: v.away };
 
   const out = [];
   for (const { publicKey, account: m } of markets) {
@@ -56,7 +62,7 @@ async function marketsJson() {
       home: f.Participant1 || "?",
       away: f.Participant2 || "?",
       kickoff: Number(m.kickoffTs) * 1000,
-      state: Object.keys(m.state)[0],
+      state: Object.keys(m.state)[0].toLowerCase(),
       proposedOutcome: m.proposedOutcome,
       challengeDeadline: Number(m.challengeDeadline) * 1000,
       pools,

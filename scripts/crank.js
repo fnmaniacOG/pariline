@@ -15,8 +15,10 @@ async function tick(http, program, wallet) {
   const now = Math.floor(Date.now() / 1000);
 
   for (const { publicKey: marketPk, account: m } of markets) {
-    const state = Object.keys(m.state)[0]; // open | proposed | settled
+    const state = Object.keys(m.state)[0].toLowerCase(); // open | proposed | settled
     const fixtureId = Number(m.fixtureId);
+    console.log(`${fixtureId}: state=${state}` +
+      (state === "proposed" ? ` outcome=${OUTCOME_NAMES[m.proposedOutcome]} deadline=${new Date(Number(m.challengeDeadline) * 1000).toISOString()}` : ""));
 
     if (state === "proposed" && now > Number(m.challengeDeadline)) {
       const sig = await program.methods.finalize().accounts({ market: marketPk }).rpc();
@@ -58,9 +60,13 @@ async function tick(http, program, wallet) {
 
     const { proof, dailyScoresRoots, goalsP1, goalsP2 } = buildSettlementProof(v);
     const claimed = outcomeFromGoals(goalsP1, goalsP2);
-    if (state === "proposed" &&
-        !new BN(proof.summary.updateStats.maxTimestamp).gte(new BN(m.proposedScoreTs))) {
-      console.log(`${fixtureId}: proposal already at latest score ts`); continue;
+    if (state === "proposed") {
+      const newTs = new BN(proof.summary.updateStats.maxTimestamp);
+      const oldTs = new BN(m.proposedScoreTs);
+      if (!newTs.gte(oldTs)) { console.log(`${fixtureId}: proposal already at latest score ts`); continue; }
+      if (newTs.eq(oldTs) && claimed === m.proposedOutcome) {
+        console.log(`${fixtureId}: proposal already correct (${OUTCOME_NAMES[claimed]})`); continue;
+      }
     }
     try {
       const sig = await program.methods
