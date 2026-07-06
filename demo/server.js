@@ -86,6 +86,11 @@ async function main() {
       if (req.url.startsWith("/api/markets")) {
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify(await marketsJson()));
+      } else if (req.url.startsWith("/api/meta")) {
+        const idl = JSON.parse(fs.readFileSync(path.join(__dirname, "../idl/pariline.json"), "utf8"));
+        const disc = (n) => idl.instructions.find((i) => i.name === n).discriminator;
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ programId: idl.address, betDisc: disc("bet"), claimDisc: disc("claim") }));
       } else {
         res.writeHead(200, { "Content-Type": "text/html" });
         res.end(html);

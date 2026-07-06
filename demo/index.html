@@ -9,10 +9,16 @@
           --home:#4da3ff; --draw:#a78bfa; --away:#ffb86b; --ok:#3ddc97; }
   * { box-sizing:border-box; margin:0; }
   body { background:var(--bg); color:var(--txt); font:15px/1.45 -apple-system,'Segoe UI',Roboto,sans-serif; padding:28px; }
+  .top { display:flex; justify-content:space-between; align-items:center; }
   h1 { font-size:22px; letter-spacing:.3px; }
   h1 span { color:var(--ok); }
   .sub { color:var(--dim); margin:4px 0 24px; font-size:13px; }
-  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(340px,1fr)); gap:16px; }
+  button { background:#18324a; color:var(--txt); border:1px solid #2a4a68; border-radius:8px;
+           padding:6px 12px; font-size:13px; cursor:pointer; }
+  button:hover { background:#1e3f5e; }
+  button.claim { background:#123726; border-color:var(--ok); color:var(--ok); }
+  button:disabled { opacity:.45; cursor:default; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(360px,1fr)); gap:16px; }
   .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; }
   .teams { font-size:17px; font-weight:600; display:flex; justify-content:space-between; align-items:center; }
   .badge { font-size:11px; padding:2px 8px; border-radius:10px; border:1px solid var(--line); color:var(--dim); text-transform:uppercase; }
@@ -25,54 +31,165 @@
   table { width:100%; border-collapse:collapse; font-size:13px; }
   th { color:var(--dim); font-weight:500; text-align:right; padding:3px 0; }
   th:first-child, td:first-child { text-align:left; }
-  td { text-align:right; padding:3px 0; border-top:1px solid var(--line); }
+  td { text-align:right; padding:4px 0; border-top:1px solid var(--line); }
+  td.act { width:64px; padding-left:8px; }
+  td.act button { padding:2px 10px; font-size:12px; }
   .o0 td:first-child{ color:var(--home);} .o1 td:first-child{ color:var(--draw);} .o2 td:first-child{ color:var(--away);}
   .tot { color:var(--dim); font-size:12px; margin-top:10px; }
+  .mine { font-size:12px; color:var(--ok); margin-top:6px; }
   .win { color:var(--ok); font-weight:600; }
   .err { color:#ff6b6b; }
+  #toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#18324a;
+           border:1px solid #2a4a68; border-radius:10px; padding:10px 18px; font-size:13px; display:none; max-width:80vw; }
 </style>
 </head>
 <body>
-<h1>Pari<span>Line</span></h1>
-<div class="sub">Parimutuel World Cup markets on Solana devnet. Settled trustlessly against TxLINE's on-chain verified scores (Merkle-proof CPI, no oracle keys, no admin).</div>
+<div class="top">
+  <div>
+    <h1>Pari<span>Line</span></h1>
+    <div class="sub">Parimutuel World Cup markets on Solana devnet. Settled trustlessly against TxLINE's on-chain verified scores (Merkle-proof CPI, no oracle keys, no admin).</div>
+  </div>
+  <button id="connect">Connect wallet</button>
+</div>
 <div id="app" class="grid">loading...</div>
+<div id="toast"></div>
+<script src="https://unpkg.com/@solana/web3.js@1.95.3/lib/index.iife.min.js"></script>
 <script>
-const NAMES = ["Home", "Draw", "Away"];
+const W = solanaWeb3;
+const RPC = new W.Connection("https://api.devnet.solana.com", "confirmed");
+const NAMES = ["HOME", "DRAW", "AWAY"];
 const fmt = (x, d=1) => x == null ? "-" : (x*100).toFixed(d) + "%";
 const pay = (x) => x == null ? "-" : x.toFixed(2) + "x";
+let META = null, WALLET = null, MARKETS = [], POSITIONS = {};
+
+function toast(msg, ms=6000) {
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.style.display = "block";
+  clearTimeout(t._h); t._h = setTimeout(() => t.style.display = "none", ms);
+}
+
+function positionPda(market, owner, outcome) {
+  return W.PublicKey.findProgramAddressSync(
+    [new TextEncoder().encode("position"), market.toBytes(), owner.toBytes(), Uint8Array.of(outcome)],
+    new W.PublicKey(META.programId))[0];
+}
+
+async function connectWallet() {
+  if (!window.solana || !window.solana.isPhantom) return toast("Phantom not found - install it from phantom.app");
+  const r = await window.solana.connect();
+  WALLET = r.publicKey;
+  document.getElementById("connect").textContent = WALLET.toBase58().slice(0, 4) + ".." + WALLET.toBase58().slice(-4);
+  await loadPositions(); render();
+}
+
+async function loadPositions() {
+  POSITIONS = {};
+  if (!WALLET || !MARKETS.length) return;
+  const keys = [], idx = [];
+  for (const m of MARKETS) for (let o = 0; o < 3; o++) {
+    keys.push(positionPda(new W.PublicKey(m.address), WALLET, o));
+    idx.push([m.fixtureId, o]);
+  }
+  const infos = await RPC.getMultipleAccountsInfo(keys);
+  infos.forEach((info, i) => {
+    if (!info) return;
+    const d = info.data; // 8 disc + 32 market + 32 owner + 1 outcome + 8 amount u64le + 1 claimed
+    const amount = Number(new DataView(d.buffer, d.byteOffset + 73, 8).getBigUint64(0, true)) / 1e9;
+    const claimed = d[81] === 1;
+    const [fid, o] = idx[i];
+    (POSITIONS[fid] = POSITIONS[fid] || {})[o] = { amount, claimed };
+  });
+}
+
+async function sendIx(keys, data, label) {
+  const ix = new W.TransactionInstruction({ programId: new W.PublicKey(META.programId), keys, data });
+  const tx = new W.Transaction().add(ix);
+  tx.feePayer = WALLET;
+  tx.recentBlockhash = (await RPC.getLatestBlockhash("confirmed")).blockhash;
+  const { signature } = await window.solana.signAndSendTransaction(tx);
+  toast(`${label} sent: ${signature.slice(0, 16)}... confirming`);
+  await RPC.confirmTransaction(signature, "confirmed");
+  toast(`${label} confirmed`);
+  await refresh();
+}
+
+async function bet(fixtureId, outcome) {
+  if (!WALLET) return toast("connect your wallet first");
+  const m = MARKETS.find((x) => x.fixtureId === fixtureId);
+  const sol = parseFloat(prompt(`Bet on ${NAMES[outcome]} (${m.home} v ${m.away}), amount in SOL:`, "0.05"));
+  if (!(sol > 0)) return;
+  const market = new W.PublicKey(m.address);
+  const data = new Uint8Array(8 + 1 + 8);
+  data.set(META.betDisc, 0); data[8] = outcome;
+  new DataView(data.buffer).setBigUint64(9, BigInt(Math.round(sol * 1e9)), true);
+  await sendIx([
+    { pubkey: market, isSigner: false, isWritable: true },
+    { pubkey: positionPda(market, WALLET, outcome), isSigner: false, isWritable: true },
+    { pubkey: WALLET, isSigner: true, isWritable: true },
+    { pubkey: W.SystemProgram.programId, isSigner: false, isWritable: false },
+  ], data, `bet ${sol} SOL on ${NAMES[outcome]}`).catch((e) => toast("bet failed: " + (e.message || e)));
+}
+
+async function claim(fixtureId, outcome) {
+  const m = MARKETS.find((x) => x.fixtureId === fixtureId);
+  const market = new W.PublicKey(m.address);
+  await sendIx([
+    { pubkey: market, isSigner: false, isWritable: true },
+    { pubkey: positionPda(market, WALLET, outcome), isSigner: false, isWritable: true },
+    { pubkey: WALLET, isSigner: true, isWritable: true },
+  ], new Uint8Array(META.claimDisc), "claim").catch((e) => toast("claim failed: " + (e.message || e)));
+}
+
+function render() {
+  const app = document.getElementById("app");
+  app.innerHTML = MARKETS.map((m) => {
+    const ko = new Date(m.kickoff);
+    const bettable = m.state === "open" && Date.now() < m.kickoff;
+    const mine = POSITIONS[m.fixtureId] || {};
+    const rows = [0, 1, 2].map((i) => {
+      const p = mine[i];
+      const won = m.state === "settled" && m.proposedOutcome === i;
+      let act = "";
+      if (bettable) act = `<button onclick="bet(${m.fixtureId},${i})">bet</button>`;
+      else if (won && p && !p.claimed) act = `<button class="claim" onclick="claim(${m.fixtureId},${i})">claim</button>`;
+      return `<tr class="o${i}">
+        <td>${i === 0 ? m.home : i === 2 ? m.away : "Draw"}${won ? ' <span class="win">WON</span>' : ""}</td>
+        <td>${m.pools[i].toFixed(3)}</td>
+        <td>${m.total > 0 ? fmt(m.poolProbs[i]) : "-"}</td>
+        <td>${fmt(m.marketProbs && m.marketProbs[i])}</td>
+        <td>${pay(m.payouts[i])}</td>
+        <td class="act">${act}</td>
+      </tr>`;
+    }).join("");
+    const mineTxt = Object.entries(mine)
+      .map(([o, p]) => `${p.amount} SOL on ${NAMES[o]}${p.claimed ? " (claimed)" : ""}`).join(", ");
+    return `<div class="card">
+      <div class="teams"><span>${m.home} v ${m.away}</span>
+        <span class="badge ${m.state}">${m.state === "open" && !bettable ? "locked" : m.state}</span></div>
+      <div class="ko">kickoff ${ko.toLocaleString()} - fixture ${m.fixtureId}</div>
+      <div class="bar">${[0,1,2].map((i)=>`<div style="width:${(m.total>0?m.poolProbs[i]:1/3)*100}%"></div>`).join("")}</div>
+      <table>
+        <tr><th>outcome</th><th>pool SOL</th><th>crowd</th><th>market</th><th>payout</th><th></th></tr>
+        ${rows}
+      </table>
+      <div class="tot">total staked ${m.total.toFixed(3)} SOL${m.state === "proposed" ? ` - challenge window ends ${new Date(m.challengeDeadline).toLocaleTimeString()}` : ""}</div>
+      ${mineTxt ? `<div class="mine">your positions: ${mineTxt}</div>` : ""}
+    </div>`;
+  }).join("");
+}
 
 async function refresh() {
-  const app = document.getElementById("app");
   try {
-    const ms = await (await fetch("/api/markets")).json();
-    if (ms.error) throw new Error(ms.error);
-    app.innerHTML = ms.map(m => {
-      const ko = new Date(m.kickoff);
-      const live = Date.now() > m.kickoff && m.state === "open";
-      const rows = [0,1,2].map(i => `
-        <tr class="o${i}">
-          <td>${i===0?m.home:i===2?m.away:"Draw"}${m.state==="settled"&&m.proposedOutcome===i?' <span class="win">WON</span>':""}</td>
-          <td>${m.pools[i].toFixed(3)}</td>
-          <td>${m.total>0?fmt(m.poolProbs[i]):"-"}</td>
-          <td>${fmt(m.marketProbs && m.marketProbs[i])}</td>
-          <td>${pay(m.payouts[i])}</td>
-        </tr>`).join("");
-      return `<div class="card">
-        <div class="teams"><span>${m.home} v ${m.away}</span>
-          <span class="badge ${m.state}">${live ? "locked" : m.state}</span></div>
-        <div class="ko">kickoff ${ko.toLocaleString()} - fixture ${m.fixtureId}</div>
-        <div class="bar">${[0,1,2].map(i=>`<div style="width:${(m.total>0?m.poolProbs[i]:1/3)*100}%"></div>`).join("")}</div>
-        <table>
-          <tr><th>outcome</th><th>pool SOL</th><th>crowd</th><th>market</th><th>payout</th></tr>
-          ${rows}
-        </table>
-        <div class="tot">total staked ${m.total.toFixed(3)} SOL${m.state==="proposed" ? ` - challenge window ends ${new Date(m.challengeDeadline).toLocaleTimeString()}` : ""}</div>
-      </div>`;
-    }).join("");
+    if (!META) META = await (await fetch("/api/meta")).json();
+    MARKETS = await (await fetch("/api/markets")).json();
+    if (MARKETS.error) throw new Error(MARKETS.error);
+    await loadPositions();
+    render();
   } catch (e) {
-    app.innerHTML = `<div class="err">failed to load: ${e.message}</div>`;
+    document.getElementById("app").innerHTML = `<div class="err">failed to load: ${e.message}</div>`;
   }
 }
+document.getElementById("connect").onclick = () => connectWallet().catch((e) => toast(e.message));
 refresh();
 setInterval(refresh, 30000);
 </script>
