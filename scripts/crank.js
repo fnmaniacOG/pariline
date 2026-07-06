@@ -100,4 +100,7 @@ async function main() {
   } while (!once);
 }
 
-main().catch((e) => { console.error("FAILED:", e.message || e); process.exit(1); });
+if (require.main === module) {
+  main().catch((e) => { console.error("FAILED:", e.message || e); process.exit(1); });
+}
+module.exports = { tick };

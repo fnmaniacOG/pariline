@@ -78,8 +78,17 @@ async function marketsJson() {
 
 async function main() {
   httpApi = await makeHttp();
-  prog = makeProgram().program;
+  const { program, wallet } = makeProgram();
+  prog = program;
   const html = fs.readFileSync(path.join(__dirname, "index.html"));
+
+  // Integrated settlement keeper: while the dApp is up, finished matches are
+  // settled and finalized automatically. Permissionless chore, not a privilege:
+  // anyone running this (or scripts/crank.js) does the same job.
+  const { tick } = require("../scripts/crank");
+  const keeper = () => tick(httpApi, prog, wallet).catch((e) => console.error("keeper:", e.message || e));
+  keeper();
+  setInterval(keeper, 60000);
 
   http.createServer(async (req, res) => {
     try {
