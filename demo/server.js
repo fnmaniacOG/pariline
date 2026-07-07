@@ -4,10 +4,52 @@
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
-const { makeHttp, makeProgram, findKeys } = require("../scripts/common");
+const { makeHttp, makeProgram, PublicKey, bs58, findKeys } = require("../scripts/common");
 
 const PORT = process.env.PORT || 8787;
-let httpApi, prog;
+let httpApi, prog, DISCS;
+const OUTCOMES = ["HOME", "DRAW", "AWAY"];
+const HIST_CACHE = {};
+
+function loadDiscs() {
+  const idl = JSON.parse(fs.readFileSync(path.join(__dirname, "../idl/pariline.json"), "utf8"));
+  DISCS = Object.fromEntries(idl.instructions.map((i) => [i.discriminator.join(","), i.name]));
+}
+
+/// Decode this market's on-chain life story from its transaction history.
+async function history(m) {
+  const cached = HIST_CACHE[m.address];
+  if (cached && Date.now() - cached.t < 120000) return cached.v;
+  const conn = prog.provider.connection;
+  const out = [];
+  try {
+    const sigs = await conn.getSignaturesForAddress(new PublicKey(m.address), { limit: 15 });
+    for (const s of sigs.reverse()) {
+      if (s.err) continue;
+      const tx = await conn.getParsedTransaction(s.signature, { maxSupportedTransactionVersion: 0 });
+      if (!tx) continue;
+      for (const ix of tx.transaction.message.instructions) {
+        if (ix.programId.toBase58() !== prog.programId.toBase58() || !ix.data) continue;
+        const d = bs58.decode(ix.data);
+        const name = DISCS[Array.from(d.slice(0, 8)).join(",")];
+        if (!name) continue;
+        const when = new Date((tx.blockTime || 0) * 1000).toISOString().slice(5, 16).replace("T", " ");
+        let label = null;
+        if (name === "create_market") label = "market created";
+        else if (name === "bet") label = `bet ${(Number(new DataView(d.buffer, d.byteOffset + 9, 8).getBigUint64(0, true)) / 1e9)} SOL on ${OUTCOMES[d[8]]}`;
+        else if (name === "propose_settlement") label = `settlement proposed: ${OUTCOMES[d[8]]} (Merkle proof verified)`;
+        else if (name === "finalize") label = "finalized after challenge window";
+        else if (name === "claim") label = "winnings claimed";
+        // skip consecutive repeats (e.g. redundant re-proposals of the same outcome)
+        if (label && (!out.length || out[out.length - 1].label !== label)) out.push({ when, label, sig: s.signature });
+      }
+    }
+  } catch (e) {
+    console.error("history:", e.message);
+  }
+  HIST_CACHE[m.address] = { t: Date.now(), v: out };
+  return out;
+}
 
 async function getOddsProbs(fixtureId) {
   // Returns demargined [pH, pD, pA] from TxLINE 1X2, or null.
@@ -56,13 +98,15 @@ async function marketsJson() {
     const f = fx[fixtureId] || {};
     const pools = m.pools.map((p) => Number(p) / 1e9);
     const total = pools.reduce((a, b) => a + b, 0);
+    const state = Object.keys(m.state)[0].toLowerCase();
     out.push({
       fixtureId,
       address: publicKey.toBase58(),
       home: f.Participant1 || "?",
       away: f.Participant2 || "?",
       kickoff: Number(m.kickoffTs) * 1000,
-      state: Object.keys(m.state)[0].toLowerCase(),
+      state,
+      history: state === "open" ? [] : await history({ address: publicKey.toBase58() }),
       proposedOutcome: m.proposedOutcome,
       challengeDeadline: Number(m.challengeDeadline) * 1000,
       pools,
@@ -78,6 +122,7 @@ async function marketsJson() {
 
 async function main() {
   httpApi = await makeHttp();
+  loadDiscs();
   const { program, wallet } = makeProgram();
   prog = program;
   const html = fs.readFileSync(path.join(__dirname, "index.html"));

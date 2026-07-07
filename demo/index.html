@@ -37,6 +37,10 @@
   .o0 td:first-child{ color:var(--home);} .o1 td:first-child{ color:var(--draw);} .o2 td:first-child{ color:var(--away);}
   .tot { color:var(--dim); font-size:12px; margin-top:10px; }
   .mine { font-size:12px; color:var(--ok); margin-top:6px; }
+  .hist { margin-top:10px; border-top:1px solid var(--line); padding-top:8px; font-size:12px; color:var(--dim); }
+  .hist div { padding:1px 0; }
+  .hist a { color:var(--dim); text-decoration:none; border-bottom:1px dotted var(--dim); }
+  .hist a:hover { color:var(--txt); }
   .win { color:var(--ok); font-weight:600; }
   .err { color:#ff6b6b; }
   #toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#18324a;
@@ -174,6 +178,8 @@ function render() {
       </table>
       <div class="tot">total staked ${m.total.toFixed(3)} SOL${m.state === "proposed" ? ` - challenge window ends ${new Date(m.challengeDeadline).toLocaleTimeString()}` : ""}</div>
       ${mineTxt ? `<div class="mine">your positions: ${mineTxt}</div>` : ""}
+      ${m.history && m.history.length ? `<div class="hist">${m.history.map((h) =>
+        `<div>${h.when} - <a href="https://explorer.solana.com/tx/${h.sig}?cluster=devnet" target="_blank">${h.label}</a></div>`).join("")}</div>` : ""}
     </div>`;
   }).join("");
 }

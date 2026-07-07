@@ -25,8 +25,8 @@ pub const TXORACLE_ID: Pubkey =
 
 /// How long after a settlement proposal anyone may counter it with a proof
 /// carrying a later score timestamp (protects against settling on a
-/// mid-match score).
-pub const CHALLENGE_WINDOW_SECS: i64 = 6 * 60 * 60;
+/// mid-match score, or against a wrong/malicious first proposer).
+pub const CHALLENGE_WINDOW_SECS: i64 = 2 * 60 * 60;
 /// Earliest a settlement may be proposed: kickoff + regulation + stoppage.
 pub const MIN_SETTLE_DELAY_SECS: i64 = 110 * 60;
 

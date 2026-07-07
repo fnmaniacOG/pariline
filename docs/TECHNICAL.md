@@ -17,7 +17,7 @@ If verification or the predicate fails, txoracle returns false and we revert. Me
 A Merkle proof of "the score was 1-0" is valid even if the match later ended 1-2. Any proof-based settlement scheme has to handle this. PariLine uses two mechanisms:
 
 1. A minimum settle delay of 110 minutes after kickoff (regulation plus stoppage), so there are no proposals during the bulk of play.
-2. A 6 hour challenge window with latest-timestamp-wins: a proposal records the proof batch's `max_timestamp`, and anyone may replace it with a proof carrying a later score timestamp. The full-time score always has the latest timestamp, so an early or stale proposal can always be beaten, by any party, permissionlessly. Honest crankers have no race to lose: they just submit the final proof.
+2. A 2 hour challenge window with latest-timestamp-wins: a proposal records the proof batch's `max_timestamp`, and anyone may replace it with a proof carrying a later score timestamp. The full-time score always has the latest timestamp, so an early or stale proposal can always be beaten, by any party, permissionlessly. Honest crankers have no race to lose: they just submit the final proof. Two hours matches the practice of major prediction markets (Polymarket's dispute window is comparable) while keeping payouts same-evening; score corrections in practice land within minutes of full time.
 
 Extra time and penalties are covered by the same mechanism, since later updates carry later timestamps and the window is long enough to span any football match.
 
