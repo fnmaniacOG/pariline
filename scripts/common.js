@@ -9,7 +9,7 @@ const SHARP = process.env.SHARPLINE_DIR || path.resolve(__dirname, "../../sharpl
 const req = createRequire(path.join(SHARP, "package.json"));
 const anchor = req("@coral-xyz/anchor");
 const axios = req("axios");
-const { Connection, Keypair, PublicKey } = req("@solana/web3.js");
+const { Connection, Keypair, PublicKey, ComputeBudgetProgram } = req("@solana/web3.js");
 const { BN } = anchor;
 
 const RPC_URL = process.env.RPC_URL || "https://api.devnet.solana.com";
@@ -120,7 +120,7 @@ function findKeys(obj, re, out = [], prefix = "") {
 }
 
 module.exports = {
-  anchor, BN, PublicKey, TXORACLE_ID, WORLD_CUP_COMPETITION_ID, FINAL_STATUS_IDS,
+  anchor, BN, PublicKey, ComputeBudgetProgram, TXORACLE_ID, WORLD_CUP_COMPETITION_ID, FINAL_STATUS_IDS,
   STAT_GOALS_P1, STAT_GOALS_P2, OUTCOME_NAMES,
   makeHttp, makeProgram, marketPda, positionPda, dailyScoresPda,
   buildSettlementProof, outcomeFromGoals, findKeys,

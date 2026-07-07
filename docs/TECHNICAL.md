@@ -10,7 +10,7 @@ Our `propose_settlement` instruction takes a claimed outcome plus the proof payl
 - draw: goals1 - goals2 == 0
 - away: goals1 - goals2 < 0
 
-If verification or the predicate fails, txoracle returns false and we revert. Measured cost of the CPI on a real payload: about 117,000 CU against the 1.4M transaction ceiling, so the whole settle transaction fits in a single default-ish budget.
+If verification or the predicate fails, txoracle returns false and we revert. Measured cost of the CPI: about 117,000 CU on a small proof batch, rising past 200,000 CU on days with bigger batches (deeper trees), so the settle transaction requests an 800,000 CU budget, still well under the 1.4M ceiling.
 
 ## The mid-match proof problem
 

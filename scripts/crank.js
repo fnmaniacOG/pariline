@@ -3,7 +3,7 @@
 // propose_settlement; finalizes markets whose challenge window has passed.
 // Usage: node crank.js [--once] [--interval <secs>]
 const {
-  makeHttp, makeProgram, BN, TXORACLE_ID, FINAL_STATUS_IDS,
+  makeHttp, makeProgram, BN, ComputeBudgetProgram, TXORACLE_ID, FINAL_STATUS_IDS,
   STAT_GOALS_P1, STAT_GOALS_P2, OUTCOME_NAMES,
   buildSettlementProof, outcomeFromGoals, findKeys,
 } = require("./common");
@@ -71,6 +71,7 @@ async function tick(http, program, wallet) {
     try {
       const sig = await program.methods
         .proposeSettlement(claimed, proof)
+        .preInstructions([ComputeBudgetProgram.setComputeUnitLimit({ units: 800_000 })])
         .accounts({
           market: marketPk,
           dailyScoresRoots,

@@ -93,8 +93,9 @@ async function main() {
   http.createServer(async (req, res) => {
     try {
       if (req.url.startsWith("/api/markets")) {
+        const body = JSON.stringify(await marketsJson());
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify(await marketsJson()));
+        res.end(body);
       } else if (req.url.startsWith("/api/meta")) {
         const idl = JSON.parse(fs.readFileSync(path.join(__dirname, "../idl/pariline.json"), "utf8"));
         const disc = (n) => idl.instructions.find((i) => i.name === n).discriminator;
@@ -105,7 +106,7 @@ async function main() {
         res.end(html);
       }
     } catch (e) {
-      res.writeHead(500, { "Content-Type": "application/json" });
+      if (!res.headersSent) res.writeHead(500, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: e.message }));
     }
   }).listen(PORT, () => console.log(`PariLine demo: http://localhost:${PORT}`));
