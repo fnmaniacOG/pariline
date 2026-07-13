@@ -6,6 +6,8 @@ Built for the TxODDS x Superteam World Cup Hackathon, Prediction Markets and Set
 
 **Devnet program:** `3LQjPerfx6ezVbe7dV4WEwUyySrA5S55arje3ParJGMi`
 
+**Live demo:** https://fnmaniacog.github.io/pariline/ - reads markets straight from devnet; bet and claim with a devnet Phantom wallet. (The full local app in `demo/` adds live bookmaker odds and runs the settlement keeper.)
+
 ## How it works
 
 1. **create_market** (permissionless): open a 1X2 market for any TxLINE World Cup fixture.
