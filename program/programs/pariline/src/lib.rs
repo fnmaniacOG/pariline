@@ -152,19 +152,24 @@ pub mod pariline {
     }
 
     /// Winner takes stake * total / winning_pool (parimutuel, no fee).
+    /// If nobody backed the winning outcome, every position refunds its stake.
     pub fn claim(ctx: Context<Claim>) -> Result<()> {
         let m = &ctx.accounts.market;
         let p = &mut ctx.accounts.position;
         require!(m.state == MarketState::Settled, ErrorCode::NotSettled);
         require!(!p.claimed, ErrorCode::AlreadyClaimed);
-        require!(p.outcome == m.proposed_outcome, ErrorCode::LosingPosition);
 
-        let total: u64 = m.pools.iter().try_fold(0u64, |a, x| a.checked_add(*x))
-            .ok_or(ErrorCode::Overflow)?;
         let winning_pool = m.pools[m.proposed_outcome as usize];
-        let payout = (p.amount as u128)
-            .checked_mul(total as u128).ok_or(ErrorCode::Overflow)?
-            .checked_div(winning_pool as u128).ok_or(ErrorCode::Overflow)? as u64;
+        let payout = if winning_pool == 0 {
+            p.amount // no winners: full refund for all positions
+        } else {
+            require!(p.outcome == m.proposed_outcome, ErrorCode::LosingPosition);
+            let total: u64 = m.pools.iter().try_fold(0u64, |a, x| a.checked_add(*x))
+                .ok_or(ErrorCode::Overflow)?;
+            (p.amount as u128)
+                .checked_mul(total as u128).ok_or(ErrorCode::Overflow)?
+                .checked_div(winning_pool as u128).ok_or(ErrorCode::Overflow)? as u64
+        };
 
         p.claimed = true;
         ctx.accounts.market.sub_lamports(payout)?;

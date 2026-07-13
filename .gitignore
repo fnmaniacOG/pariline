@@ -10,8 +10,9 @@ program/.anchor/
 test-ledger/
 node_modules/
 
-# regenerable feasibility output
+# regenerable feasibility output and caches
 feasibility/validation.json
 feasibility/scores-snapshot.json
+demo/history-cache.json
 
 .DS_Store

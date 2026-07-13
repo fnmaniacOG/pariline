@@ -50,5 +50,5 @@ The TxLINE auth flow (guest JWT plus on-chain subscribe token), the fixture and 
 - 1X2 only; the same proof machinery extends to totals and handicaps via other stat keys and thresholds (txoracle's predicate already supports arbitrary thresholds and two-stat expressions).
 - Stakes are native SOL; an SPL (e.g. USDC) variant is a token-account swap away.
 - If TxODDS stopped publishing roots entirely, markets would simply never settle; funds would be stuck rather than stolen. A refund-after-deadline instruction is the natural extension.
-- Full-game goal totals include extra time in knockout matches. A regulation-only 1X2 variant would prove the H1 and H2 period keys (1001/1002 and 2001/2002) and sum them on-chain.
-- If a market has no winning positions (nobody backed the proven outcome), the pot currently stays in the vault; a refund path for that case is another natural extension.
+- The market settles on final score including extra time (verified: per-period leaves exist, e.g. fixture 18213979 proves H1 1-1 via keys 1001/1002 vs 1-2 full via keys 1/2). A regulation-only 1X2 variant needs four leaf proofs (H1+H2 per team), which exceeds one transaction, so it requires a two-step settlement; designed but not shipped.
+- If nobody backed the winning outcome, claim refunds every position its full stake, so no pot can ever be stranded.

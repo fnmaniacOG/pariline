@@ -12,7 +12,7 @@ Built for the TxODDS x Superteam World Cup Hackathon, Prediction Markets and Set
 2. **bet**: stake SOL on home, draw, or away. Stakes pool per outcome. Betting locks automatically at kickoff via the Clock sysvar.
 3. **propose_settlement** (permissionless): after full time, anyone submits TxLINE Merkle proofs of both teams' goal totals. The program CPIs into the TxODDS txoracle program's `validate_stat`, which verifies the proofs against the daily score roots stored on-chain and evaluates the claimed outcome as a predicate: goals(home) minus goals(away) compared to zero. If the oracle program returns false, the transaction fails. Measured cost: about 117k CU, well within limits.
 4. **Challenge window** (2 hours): a proposal built from a mid-match score, or from a wrong or malicious proposer, can always be replaced by anyone holding a proof with a later score timestamp. Latest timestamp wins. This makes settling early strictly unprofitable, and it means nobody has to trust whoever ran the settlement bot.
-5. **finalize**, then **claim**: winners split the entire pot pro rata. Parimutuel, no fees.
+5. **finalize**, then **claim**: winners split the entire pot pro rata. Parimutuel, no fees. The result is the final score including extra time; level after 120 minutes is a draw (shootouts decide who advances, not the score). If nobody backed the winning outcome, all stakes are refundable in full.
 
 ## Why this is trustless
 

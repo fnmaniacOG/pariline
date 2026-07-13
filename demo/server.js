@@ -9,7 +9,11 @@ const { makeHttp, makeProgram, PublicKey, BN, bs58, marketPda, WORLD_CUP_COMPETI
 const PORT = process.env.PORT || 8787;
 let httpApi, prog, DISCS;
 const OUTCOMES = ["HOME", "DRAW", "AWAY"];
-const HIST_CACHE = {};
+const HIST_PATH = path.join(__dirname, "history-cache.json");
+let HIST_CACHE = {};
+try { HIST_CACHE = JSON.parse(fs.readFileSync(HIST_PATH, "utf8")); } catch {}
+const saveHist = () => { try { fs.writeFileSync(HIST_PATH, JSON.stringify(HIST_CACHE)); } catch {} };
+const WARMING = new Set();
 
 function loadDiscs() {
   const idl = JSON.parse(fs.readFileSync(path.join(__dirname, "../idl/pariline.json"), "utf8"));
@@ -19,11 +23,19 @@ function loadDiscs() {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /// Decode this market's on-chain life story from its transaction history.
-/// Cached by state fingerprint: only re-fetched when the market actually
-/// changes (or every 10 min), to stay under public RPC rate limits.
-async function history(m, fp) {
+/// Disk-cached by state fingerprint (finalized markets never change), and
+/// never blocks the page: misses are fetched in the background.
+function history(m, fp) {
   const cached = HIST_CACHE[m.address];
-  if (cached && cached.fp === fp && Date.now() - cached.t < 600000) return cached.v;
+  if (cached && cached.fp === fp) return cached.v;
+  if (!WARMING.has(m.address)) {
+    WARMING.add(m.address);
+    fetchHistory(m, fp).finally(() => WARMING.delete(m.address));
+  }
+  return cached ? cached.v : [];
+}
+
+async function fetchHistory(m, fp) {
   const conn = prog.provider.connection;
   const out = [];
   try {
@@ -51,11 +63,10 @@ async function history(m, fp) {
     }
   } catch (e) {
     console.error("history:", e.message);
-    // keep stale cache on failure rather than hammering the RPC
-    if (cached) return cached.v;
+    return; // keep whatever cache exists rather than overwriting with partial data
   }
   HIST_CACHE[m.address] = { t: Date.now(), v: out, fp };
-  return out;
+  saveHist();
 }
 
 async function getOddsProbs(fixtureId) {
@@ -113,7 +124,7 @@ async function marketsJson() {
       away: f.Participant2 || "?",
       kickoff: Number(m.kickoffTs) * 1000,
       state,
-      history: state === "open" ? [] : await history(
+      history: state === "open" ? [] : history(
         { address: publicKey.toBase58() },
         `${state}:${m.proposedScoreTs}:${pools.join(",")}`),
       proposedOutcome: m.proposedOutcome,
@@ -179,7 +190,12 @@ async function main() {
         const idl = JSON.parse(fs.readFileSync(path.join(__dirname, "../idl/pariline.json"), "utf8"));
         const disc = (n) => idl.instructions.find((i) => i.name === n).discriminator;
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ programId: idl.address, betDisc: disc("bet"), claimDisc: disc("claim") }));
+        res.end(JSON.stringify({
+          programId: idl.address,
+          betDisc: disc("bet"),
+          claimDisc: disc("claim"),
+          rpcUrl: process.env.RPC_URL || "https://api.devnet.solana.com",
+        }));
       } else {
         res.writeHead(200, { "Content-Type": "text/html" });
         res.end(html);

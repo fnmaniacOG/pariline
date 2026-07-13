@@ -56,21 +56,33 @@
   <button id="connect">Connect wallet</button>
 </div>
 <div id="app" class="grid">loading...</div>
+<div class="hist" style="max-width:900px; margin-top:28px; border:none;">
+  <b style="color:var(--txt)">Rules</b>
+  <div>1. Bet SOL on any outcome until kickoff. Betting locks at the scheduled kickoff time, enforced by the on-chain clock, not just this page.</div>
+  <div>2. The result is the final score including extra time. Level after 120 minutes = Draw. Penalty shootouts decide who advances, not the score, so they never decide the pot.</div>
+  <div>3. Settlement is trustless: anyone submits the score with a Merkle proof, verified on-chain against score fingerprints published by TxODDS. Wrong or forged scores cannot pass.</div>
+  <div>4. Every settlement has a 2 hour objection window. Anyone holding a proof with a later score timestamp can overwrite the standing one. After a quiet window, the market finalizes.</div>
+  <div>5. Winners split the entire pot in proportion to their stake. No fees.</div>
+  <div>6. If nobody backed the winning outcome, all bets are refundable in full. If only the winning outcome was backed, payouts equal stakes (same as a refund).</div>
+</div>
 <div id="toast"></div>
 <script src="https://unpkg.com/@solana/web3.js@1.95.3/lib/index.iife.min.js"></script>
 <script>
 const W = solanaWeb3;
-const RPC = new W.Connection("https://api.devnet.solana.com", "confirmed");
+let RPC = new W.Connection("https://api.devnet.solana.com", "confirmed");
 const NAMES = ["HOME", "DRAW", "AWAY"];
 const fmt = (x, d=1) => x == null ? "-" : (x*100).toFixed(d) + "%";
 const pay = (x) => x == null ? "-" : x.toFixed(2) + "x";
 let META = null, WALLET = null, MARKETS = [], POSITIONS = {};
 
 function toast(msg, ms=6000) {
+  console.log("[pariline]", msg);
   const t = document.getElementById("toast");
   t.textContent = msg; t.style.display = "block";
   clearTimeout(t._h); t._h = setTimeout(() => t.style.display = "none", ms);
 }
+window.addEventListener("unhandledrejection", (e) => toast("error: " + (e.reason?.message || e.reason)));
+window.addEventListener("error", (e) => toast("error: " + e.message));
 
 function positionPda(market, owner, outcome) {
   return W.PublicKey.findProgramAddressSync(
@@ -78,9 +90,13 @@ function positionPda(market, owner, outcome) {
     new W.PublicKey(META.programId))[0];
 }
 
+// Prefer Phantom's dedicated handle: window.solana can be clobbered by other
+// wallet extensions that accept connect() but swallow transaction requests.
+const provider = () => window.phantom?.solana || window.solana;
+
 async function connectWallet() {
-  if (!window.solana || !window.solana.isPhantom) return toast("Phantom not found - install it from phantom.app");
-  const r = await window.solana.connect();
+  if (!provider()) return toast("Phantom not found - install it from phantom.app");
+  const r = await provider().connect();
   WALLET = r.publicKey;
   document.getElementById("connect").textContent = WALLET.toBase58().slice(0, 4) + ".." + WALLET.toBase58().slice(-4);
   await loadPositions(); render();
@@ -106,11 +122,20 @@ async function loadPositions() {
 }
 
 async function sendIx(keys, data, label) {
+  toast(`${label}: building transaction...`, 15000);
   const ix = new W.TransactionInstruction({ programId: new W.PublicKey(META.programId), keys, data });
   const tx = new W.Transaction().add(ix);
   tx.feePayer = WALLET;
   tx.recentBlockhash = (await RPC.getLatestBlockhash("confirmed")).blockhash;
-  const { signature } = await window.solana.signAndSendTransaction(tx);
+  toast(`${label}: waiting for wallet approval...`, 30000);
+  const prov = provider();
+  let signature;
+  if (typeof prov.signAndSendTransaction === "function") {
+    ({ signature } = await prov.signAndSendTransaction(tx));
+  } else {
+    const signed = await prov.signTransaction(tx);
+    signature = await RPC.sendRawTransaction(signed.serialize());
+  }
   toast(`${label} sent: ${signature.slice(0, 16)}... confirming`);
   await RPC.confirmTransaction(signature, "confirmed");
   toast(`${label} confirmed`);
@@ -135,6 +160,7 @@ async function bet(fixtureId, outcome) {
 }
 
 async function claim(fixtureId, outcome) {
+  if (!WALLET) return toast("connect your wallet first");
   const m = MARKETS.find((x) => x.fixtureId === fixtureId);
   const market = new W.PublicKey(m.address);
   await sendIx([
@@ -153,9 +179,11 @@ function render() {
     const rows = [0, 1, 2].map((i) => {
       const p = mine[i];
       const won = m.state === "settled" && m.proposedOutcome === i;
+      const refundable = m.state === "settled" && m.pools[m.proposedOutcome] === 0;
       let act = "";
-      if (bettable) act = `<button onclick="bet(${m.fixtureId},${i})">bet</button>`;
-      else if (won && p && !p.claimed) act = `<button class="claim" onclick="claim(${m.fixtureId},${i})">claim</button>`;
+      if (bettable) act = `<button data-act="bet" data-f="${m.fixtureId}" data-o="${i}">bet</button>`;
+      else if (won && p && !p.claimed) act = `<button class="claim" data-act="claim" data-f="${m.fixtureId}" data-o="${i}">claim</button>`;
+      else if (refundable && p && !p.claimed) act = `<button class="claim" data-act="claim" data-f="${m.fixtureId}" data-o="${i}">refund</button>`;
       return `<tr class="o${i}">
         <td>${i === 0 ? m.home : i === 2 ? m.away : "Draw"}${won ? ' <span class="win">WON</span>' : ""}</td>
         <td>${m.pools[i].toFixed(3)}</td>
@@ -186,7 +214,10 @@ function render() {
 
 async function refresh() {
   try {
-    if (!META) META = await (await fetch("/api/meta")).json();
+    if (!META) {
+      META = await (await fetch("/api/meta")).json();
+      RPC = new W.Connection(META.rpcUrl, "confirmed");
+    }
     MARKETS = await (await fetch("/api/markets")).json();
     if (MARKETS.error) throw new Error(MARKETS.error);
     await loadPositions();
@@ -195,7 +226,25 @@ async function refresh() {
     document.getElementById("app").innerHTML = `<div class="err">failed to load: ${e.message}</div>`;
   }
 }
+console.log("[pariline] ui v3 loaded");
 document.getElementById("connect").onclick = () => connectWallet().catch((e) => toast(e.message));
+// event delegation: survives re-renders, no inline handlers
+document.getElementById("app").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-act]");
+  if (!b) return;
+  const f = Number(b.dataset.f), o = Number(b.dataset.o);
+  toast(`${b.dataset.act} clicked (${f} / ${NAMES[o]})`, 2500);
+  if (b.dataset.act === "bet") bet(f, o).catch((err) => toast("bet failed: " + (err.message || err)));
+  else claim(f, o).catch((err) => toast("claim failed: " + (err.message || err)));
+});
+// silently restore an already-trusted wallet connection on load
+if (provider()) {
+  provider().connect({ onlyIfTrusted: true }).then((r) => {
+    WALLET = r.publicKey;
+    document.getElementById("connect").textContent = WALLET.toBase58().slice(0, 4) + ".." + WALLET.toBase58().slice(-4);
+    refresh();
+  }).catch(() => {});
+}
 refresh();
 setInterval(refresh, 30000);
 </script>
